@@ -1,0 +1,11 @@
+title = "lesson-agent-harness gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Deliberately fake secret-like strings used to prove the harness redacts and rejects them"
+paths = [
+  '''tests/Validation\.Tests/ActionValidatorTests\.cs''',
+  '''tests/Telemetry\.Tests/.*''',
+]
