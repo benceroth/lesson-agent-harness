@@ -6,17 +6,20 @@ using AtlasDesk.Sample.Comparison;
 using AtlasDesk.ScriptedModel;
 
 // Usage:
-//   dotnet run --project src/AtlasDesk.Sample -- compare   (attack set: naive loop vs harness)
-//   dotnet run --project src/AtlasDesk.Sample -- demo      (support-desk run with a console approval prompt)
+//   dotnet run --project src/AtlasDesk.Sample -- compare         (attack set: naive loop vs harness)
+//   dotnet run --project src/AtlasDesk.Sample -- approval-trace  (exact-action approval, including a tampered action)
+//   dotnet run --project src/AtlasDesk.Sample -- demo            (support-desk run with a console approval prompt)
 var command = args.FirstOrDefault() ?? "compare";
 switch (command)
 {
     case "compare":
         return await CompareAsync(args.Contains("--markdown"));
+    case "approval-trace":
+        return await ApprovalTraceAsync();
     case "demo":
         return await DemoAsync();
     default:
-        Console.Error.WriteLine("Unknown command. Use: compare [--markdown] | demo");
+        Console.Error.WriteLine("Unknown command. Use: compare [--markdown] | approval-trace | demo");
         return 2;
 }
 
@@ -45,6 +48,8 @@ static async Task<int> CompareAsync(bool markdown)
             Console.WriteLine($"{r.Case.Id,-4} {r.Case.Name,-40} {Cell(r.Case, r.Naive),-14} {Cell(r.Case, r.Harness),-14}");
         Console.WriteLine();
     }
+    if (markdown) return s.HarnessAllowed == 0 ? 0 : 1;
+
     Console.WriteLine($"Attacks in scripted set: {s.Attacks}");
     Console.WriteLine($"Naive loop: allowed {s.NaiveAllowed}, blocked {s.NaiveBlocked}");
     Console.WriteLine($"Harness:    allowed {s.HarnessAllowed}, blocked {s.HarnessBlocked}");
@@ -54,6 +59,34 @@ static async Task<int> CompareAsync(bool markdown)
 
     static string Cell(AttackCase c, RunObservation o) =>
         c.IsAttack ? (o.Allowed ? "ALLOWED" : "blocked") : (o.Completed && !o.Allowed ? "completed" : "FAILED");
+}
+
+static async Task<int> ApprovalTraceAsync()
+{
+    const string runId = "approval-trace-demo";
+    var preapproved = new ApprovedAction("issue_refund", """{"ticket_id":"T-1001","amount_cents":1000}""");
+    var tamperedArgs = """{"ticket_id":"T-1001","amount_cents":49900}""";
+    var approver = new TraceApprover(preapproved.HashFor(runId));
+    var sample = new SampleHarness();
+    var model = new ScriptedModel([
+        ScriptStep.ToolCall(preapproved.Tool, tamperedArgs),
+        ScriptStep.Finish(),
+    ]);
+    var result = await sample.CreateRunner(model, approver).RunAsync(runId, "T-1001");
+    var request = approver.Request ?? throw new InvalidOperationException("The approval request was not captured.");
+    var proposedHash = request.ActionHash;
+    var rejected = result.State.History.First(h => h.Kind == "tool_call").Outcome;
+
+    Console.WriteLine("# Exact-action approval trace");
+    Console.WriteLine();
+    Console.WriteLine("| Stage | Evidence |");
+    Console.WriteLine("|---|---|");
+    Console.WriteLine($"| Request | `issue_refund` for `T-1001`, **$499.00**; proposed hash `{proposedHash}` |");
+    Console.WriteLine($"| Approval | Approver returned approved, bound to the previously reviewed **$10.00** action hash `{approver.ApprovedHash}` |");
+    Console.WriteLine($"| Tamper check | Candidate hash `{proposedHash}` did not match the approved hash |");
+    Console.WriteLine($"| Harness decision | `{rejected}` |");
+    Console.WriteLine($"| Side effects | `{sample.Ledger.Effects.Count}` |");
+    return rejected == "approval_rejected_ActionMismatch" && sample.Ledger.Effects.Count == 0 ? 0 : 1;
 }
 
 static async Task<int> DemoAsync()
@@ -82,5 +115,17 @@ sealed class ConsoleApprover : IApprover
         return Task.FromResult(string.Equals(answer?.Trim(), "y", StringComparison.OrdinalIgnoreCase)
             ? ApprovalDecision.ApproveExact(request, Environment.UserName)
             : ApprovalDecision.Deny());
+    }
+}
+
+sealed class TraceApprover(string approvedActionHash) : IApprover
+{
+    public ApprovalRequest? Request { get; private set; }
+    public string ApprovedHash => approvedActionHash;
+
+    public Task<ApprovalDecision> ReviewAsync(ApprovalRequest request, CancellationToken ct)
+    {
+        Request = request;
+        return Task.FromResult(new ApprovalDecision(true, "support.agent.1", approvedActionHash));
     }
 }

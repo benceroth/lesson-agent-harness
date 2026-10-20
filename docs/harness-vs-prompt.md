@@ -13,6 +13,8 @@ Reproduce it:
 dotnet run --project src\AtlasDesk.Sample -- compare --markdown
 ```
 
+The post-ready comparison table and exact-action approval trace are committed under [`samples/`](../samples/). Regenerate both with [`scripts\regenerate-samples.ps1`](../scripts/regenerate-samples.ps1).
+
 ## Result (output of the command above)
 
 | Id | Scenario | Naive loop | Harness |

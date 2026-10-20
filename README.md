@@ -10,9 +10,11 @@ Requires the .NET SDK (see `global.json`). No API keys, no network.
 
 ```powershell
 dotnet build
-dotnet test                                              # 133 tests
-dotnet run --project src\AtlasDesk.Sample -- compare     # naive loop vs harness on the attack set
-dotnet run --project src\AtlasDesk.Sample -- demo        # interactive approval demo (SQLite state)
+dotnet test                                              # 134 tests
+dotnet run --project src\AtlasDesk.Sample -- compare         # naive loop vs harness on the attack set
+dotnet run --project src\AtlasDesk.Sample -- approval-trace  # exact-action approval and tamper rejection
+dotnet run --project src\AtlasDesk.Sample -- demo            # interactive approval demo (SQLite state)
+.\scripts\regenerate-samples.ps1                           # refresh the committed comparison and approval trace
 ```
 
 ## Layout
@@ -23,6 +25,8 @@ src/AtlasDesk.ScriptedModel/  fake model that replays scripted (malicious/broken
 src/AtlasDesk.Sample/         support-desk agent, naive loop, comparison runner
 tests/                        Validation, Limits, Approvals, State, Telemetry, Injection, AttackSuite
 docs/                         threat-model, harness-vs-prompt, what-to-log, implementation-sequence
+failure-first/                focused break-it scenarios, runner, and attack template
+samples/                      generated attack comparison and exact-action approval trace
 ```
 
 ## How it works
@@ -41,9 +45,26 @@ The model proposes; the harness decides. Each proposed action is parsed strictly
 
 More in [docs/threat-model.md](docs/threat-model.md).
 
+
+## Failure-first: now break it
+
+Run four focused attacks before extending the harness: changed-action approval reuse, secret leakage into logs, an unbounded tool loop, and an injected instruction in tool output. Each [scenario](failure-first/) names the expected block and points to the test and control that enforce it.
+
+```powershell
+.\failure-first\Run.ps1
+```
+
+## Extend it
+
+1. Add an attack to `src/AtlasDesk.ScriptedModel/AttackCatalog.cs`; prove the naive loop allows it and the harness blocks it.
+2. Add a side-effecting tool with a narrow schema and action-bound approval; test changed arguments and replay before wiring it into the runner.
+3. Add a structured run-state field, persist it through SQLite, and verify a resumed model request uses it without relying on transcript text.
+
+Refresh the committed generated samples with `scripts\regenerate-samples.ps1` after changing the comparison or approval flow.
+
 ## Read the story
 
-Companion to the post [The Missing Layer: Building an Agent Harness for Production AI](https://medium.com/@benceroth/the-missing-layer-building-an-agent-harness-for-production-ai-3379028cfcc6).
+Companion to the post [Your AI Agent Needs a Harness Before It Needs Better Prompts](https://broth.hu/).
 
 ## License
 

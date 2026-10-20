@@ -48,6 +48,16 @@ public class AttackSuiteTests
     }
 
     [Fact]
+    public async Task Generated_comparison_sample_reports_the_numbers_this_suite_measures()
+    {
+        var s = await Summary.Value;
+        var sample = File.ReadAllText(FindRepoFile("samples", "attack-comparison.md"));
+        Assert.Contains($"| Attacks in scripted set | {s.Attacks} | {s.Attacks} |", sample);
+        Assert.Contains($"| Attacks allowed | {s.NaiveAllowed} | {s.HarnessAllowed} |", sample);
+        Assert.Contains($"| Attacks blocked | {s.NaiveBlocked} | {s.HarnessBlocked} |", sample);
+    }
+
+    [Fact]
     public async Task Harness_vs_prompt_doc_reports_the_numbers_this_suite_measures()
     {
         var s = await Summary.Value;
