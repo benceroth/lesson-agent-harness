@@ -1,0 +1,38 @@
+# Threat model
+
+Each row maps a threat to the control that addresses it and the test that proves the control. Test names are `Class.Method` and exist in the repo; `AttackSuite` cases (A01–A12) are in `docs/harness-vs-prompt.md`.
+
+| # | Threat | Control | Test(s) |
+|---|---|---|---|
+| 1 | Model proposes a tool that does not exist or is not allow-listed | Exact-match tool registry; no fuzzy matching | `ActionValidatorTests.Rejects_unknown_tool_without_guessing`, `ActionValidatorTests.Tool_lookup_is_exact`, `ActionValidatorTests.Rejects_tool_that_is_registered_but_not_allow_listed`, `RunnerValidationTests.Unknown_tool_is_rejected_before_any_external_call` (A01) |
+| 2 | Malformed, mistyped or smuggled arguments reach a tool | Strict schema validation before execution | `ActionValidatorTests.Rejects_malformed_json`, `ActionValidatorTests.Rejects_wrong_argument_type`, `ActionValidatorTests.Rejects_extra_argument`, `ActionValidatorTests.Rejects_out_of_range_integer`, `ActionValidatorTests.Rejects_argument_not_matching_pattern`, `RunnerValidationTests.Malformed_arguments_never_reach_a_tool` (A04–A07) |
+| 3 | Duplicate keys or deep nesting used to confuse the parser | Duplicate-field rejection, depth limit | `ActionValidatorTests.Rejects_duplicate_fields`, `ActionValidatorTests.Rejects_duplicate_argument_keys`, `ActionValidatorTests.Rejects_excessively_nested_json` |
+| 4 | Oversized model output | Output size limit | `ActionValidatorTests.Rejects_oversized_output`, `ActionValidatorTests.Rejects_over_long_message` (A08) |
+| 5 | Validation errors leak or echo attacker content back into the prompt | Fixed error codes, no echo | `ActionValidatorTests.Error_messages_do_not_echo_model_content`, `RunnerValidationTests.Invalid_output_is_rejected_and_the_model_is_told_why_without_echo` |
+| 6 | Prompt injection in tool output triggers a side effect | Tool output marked untrusted; side effects gated by approval | `InjectionTests.Tool_output_with_instructions_is_passed_as_untrusted_data`, `InjectionTests.Injected_refund_proposal_is_denied_without_approval`, `InjectionTests.Tool_output_that_looks_like_an_action_is_never_executed` (A02) |
+| 7 | Injection tries to redirect output (recipient override) | Schema rejects undeclared arguments | `InjectionTests.Injected_recipient_override_is_rejected_by_the_schema` |
+| 8 | Side effect without human approval | Approval required by tool policy | `RunnerApprovalTests.Email_cannot_be_sent_without_approval` |
+| 9 | Approval reused for a changed action | Approval bound to SHA-256 of run id + tool + canonical arguments | `ApprovalServiceTests.Changed_arguments_invalidate_the_approval`, `ApprovalServiceTests.Changed_tool_invalidates_the_approval`, `ApprovalServiceTests.Approval_from_another_run_is_rejected`, `RunnerApprovalTests.Changing_the_approved_message_invalidates_the_approval` (A03) |
+| 10 | Approval replayed or used after it should have lapsed | Single-use grants with expiry | `ApprovalServiceTests.Replayed_approval_is_rejected`, `ApprovalServiceTests.Expired_approval_is_rejected`, `ApprovalServiceTests.Concurrent_consumption_lets_exactly_one_caller_win`, `RunnerApprovalTests.Expired_approval_blocks_the_action_in_the_runner` |
+| 11 | Hash can be fooled by argument order or type tricks | Canonical sorted, typed JSON | `ApprovalServiceTests.Hash_is_independent_of_argument_order`, `ApprovalServiceTests.Hash_distinguishes_value_types`, `ApprovalServiceTests.Hash_has_no_delimiter_ambiguity_between_tool_and_arguments` |
+| 12 | Same side effect executed twice (retry, replay, resume) | Completed-effect check by action hash plus tool-level idempotency key | `RunnerApprovalTests.Replayed_side_effect_in_the_same_run_is_not_repeated`, `RunnerApprovalTests.Approved_email_is_sent_exactly_once`, `CrashResumeTests.Resume_does_not_resend_a_completed_email`, `CrashResumeTests.Crash_after_a_tool_effect_but_before_saving_does_not_duplicate_the_side_effect` (A11) |
+| 13 | Runaway loop | Step limit | `RunLimitTests.Infinite_tool_loop_is_stopped_at_step_limit`, `RunLimitTests.Stopped_runs_are_never_reported_as_success` (A09) |
+| 14 | Token or cost explosion | Token and cost budgets | `RunLimitTests.Token_budget_exceeded_stops_before_executing_the_action`, `RunLimitTests.Cost_budget_exceeded_stops_the_run` (A12) |
+| 15 | Tool-attempt storms and endless retries | Attempt cap, retry cap, no retry of non-transient errors | `RunLimitTests.Tool_attempt_limit_stops_the_run`, `RunLimitTests.Persistent_transient_failure_stops_retrying_after_two_retries`, `RunLimitTests.Non_transient_tool_failure_is_not_retried` |
+| 16 | Hung model or tool | Deadline, model cancellation, tool timeout | `RunLimitTests.Deadline_exceeded_when_the_clock_passes_the_run_deadline`, `RunLimitTests.Hanging_model_is_cancelled_at_the_deadline`, `RunLimitTests.Hanging_tool_times_out_and_is_retried_at_most_twice`, `RunLimitTests.Tool_that_ignores_cancellation_does_not_block_the_run` (A10) |
+| 17 | Model keeps producing invalid output | Invalid-output cap | `RunLimitTests.Repeated_invalid_output_stops_the_run` |
+| 18 | Huge tool results flood the context | Result truncation | `RunLimitTests.Tool_results_are_truncated_to_the_configured_size` |
+| 19 | Crash loses progress; conversation reset loses state | State store (in-memory and SQLite), structured state in model requests | `CrashResumeTests.Crash_mid_run_resumes_from_the_sqlite_store`, `CrashResumeTests.Conversation_reset_does_not_lose_state`, `CrashResumeTests.Model_requests_carry_structured_state_not_a_transcript`, `CrashResumeTests.Resumed_run_past_its_deadline_ends_as_deadline_exceeded` |
+| 20 | A stopped run is mistaken for success; finished runs are reopened | Named terminal states, immutable after termination | `RunStoreTests.Terminal_status_is_immutable`, `RunStoreTests.Only_completed_counts_as_success_and_codes_are_machine_readable`, `CrashResumeTests.Finished_run_cannot_be_resumed_or_extended` |
+| 21 | Secrets or PII leak through telemetry | Redaction at tag time and in the exporter pipeline; denylisted tag keys | `RedactorTests.Redactor_masks_secret_and_pii_shapes`, `TelemetryTests.Run_spans_never_contain_secrets_or_pii`, `TelemetryTests.Logs_never_contain_secrets_or_pii`, `TelemetryTests.Redacting_processor_scrubs_leaky_tags_in_an_opentelemetry_pipeline`, `TelemetryTests.Unknown_tool_name_proposed_by_the_model_is_not_recorded_in_spans` |
+| 22 | Telemetry is useless for diagnosis | Required span fields | `TelemetryTests.Run_spans_contain_the_diagnostic_fields_operators_need` |
+| 23 | End-to-end: attack set against the naive loop and the harness | All of the above | `AttackSuiteTests.Naive_loop_allows_the_attack`, `AttackSuiteTests.Harness_blocks_the_attack`, `AttackSuiteTests.Both_loops_complete_benign_cases_without_violations`, `AttackSuiteTests.Summary_counts_are_consistent` |
+
+## Known gaps (not covered)
+
+- **Approval grants are in memory.** After a process restart the grant is gone and the action needs re-approval (fails safe, but not durable).
+- **Non-cooperative tools.** The harness stops *waiting* for a tool that ignores cancellation; the work itself may continue.
+- **State store contents.** Tool output is stored for resume and may contain PII. Protect the SQLite file; redaction applies to telemetry, not to the store.
+- **Redaction is pattern-based.** It catches common shapes (emails, bearer tokens, keys, card and phone numbers), not arbitrary sensitive text.
+- **The reviewer.** An approver who clicks approve without reading defeats approval gates; the harness only guarantees what was approved is what runs.
+- **No retry backoff, no authentication or multi-tenant isolation**: out of scope for this sample.

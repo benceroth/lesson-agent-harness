@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AtlasDesk.Harness/AtlasDesk.Harness.csproj" />
+    <Project Path="src/AtlasDesk.Sample/AtlasDesk.Sample.csproj" />
+    <Project Path="src/AtlasDesk.ScriptedModel/AtlasDesk.ScriptedModel.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Approvals.Tests/Approvals.Tests.csproj" />
+    <Project Path="tests/AttackSuite.Tests/AttackSuite.Tests.csproj" />
+    <Project Path="tests/Injection.Tests/Injection.Tests.csproj" />
+    <Project Path="tests/Limits.Tests/Limits.Tests.csproj" />
+    <Project Path="tests/State.Tests/State.Tests.csproj" />
+    <Project Path="tests/Telemetry.Tests/Telemetry.Tests.csproj" />
+    <Project Path="tests/Validation.Tests/Validation.Tests.csproj" />
+  </Folder>
+</Solution>

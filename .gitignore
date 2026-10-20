@@ -1,0 +1,13 @@
+bin/
+obj/
+TestResults/
+coverage/
+*.user
+*.suo
+.vs/
+.idea/
+*.db
+*.db-journal
+*.sqlite
+.env
+*.log
